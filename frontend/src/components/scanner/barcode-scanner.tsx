@@ -1,20 +1,20 @@
-"use client"
+'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { 
-  X, 
-  Camera, 
-  CameraOff, 
-  Scan, 
-  AlertCircle, 
+import {
+  X,
+  Camera,
+  CameraOff,
+  Scan,
+  AlertCircle,
   CheckCircle,
   Keyboard,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
 } from 'lucide-react'
 import { BarcodeImageUpload } from './barcode-image-upload'
 
@@ -31,11 +31,11 @@ interface BarcodeScannerProps {
 
 type ScanMode = 'camera' | 'upload' | 'manual'
 
-export function BarcodeScanner({ 
-  isOpen, 
-  onClose, 
-  onScanComplete, 
-  productInfo 
+export function BarcodeScanner({
+  isOpen,
+  onClose,
+  onScanComplete,
+  productInfo,
 }: BarcodeScannerProps) {
   const [scanMode, setScanMode] = useState<ScanMode>('camera')
   const [isScanning, setIsScanning] = useState(false)
@@ -47,7 +47,7 @@ export function BarcodeScanner({
     price: number
     verified: boolean
   } | null>(null)
-  
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -66,14 +66,14 @@ export function BarcodeScanner({
   const startCamera = async () => {
     try {
       setError('')
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment' // Use back camera if available
-        } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // Use back camera if available
+        },
       })
-      
+
       streamRef.current = stream
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         videoRef.current.play()
@@ -81,8 +81,10 @@ export function BarcodeScanner({
       }
     } catch (err) {
       console.error('Camera access denied:', err)
-      setError('Camera access denied. Please enable camera permissions or use manual entry.')
-      setShowManualEntry(true)
+      setError(
+        'Camera access denied. Please enable camera permissions or use manual entry.'
+      )
+      setScanMode('manual')
     }
   }
 
@@ -97,8 +99,8 @@ export function BarcodeScanner({
   const simulateBarcodeScan = () => {
     // Simulate barcode scanning - in a real app, you'd use a barcode scanning library
     const mockUPC = productInfo?.expectedUPC || '123456789012'
-    const mockPrice = Math.random() < 0.3 ? 0.10 : Math.random() * 20 + 0.99
-    
+    const mockPrice = Math.random() < 0.3 ? 0.1 : Math.random() * 20 + 0.99
+
     handleUPCDecoded(mockUPC)
   }
 
@@ -108,7 +110,7 @@ export function BarcodeScanner({
       setError('Please enter a valid price')
       return
     }
-    
+
     // Save the manually entered price
     savePriceToDatabase(productInfo?.sku || '', price, false)
     onScanComplete(price)
@@ -124,35 +126,39 @@ export function BarcodeScanner({
   const handleUPCDecoded = (upc: string, productData?: any) => {
     setScannedCode(upc)
     setError('')
-    
+
     if (productData) {
       // If we have product data from the image upload, use it
       setScanResult({
         upc,
         price: productData.discount_info?.current_price || 0,
-        verified: true
+        verified: true,
       })
     } else {
       // For camera scanning, simulate price lookup
-      const mockPrice = Math.random() < 0.3 ? 0.10 : Math.random() * 20 + 0.99
+      const mockPrice = Math.random() < 0.3 ? 0.1 : Math.random() * 20 + 0.99
       setScanResult({
         upc,
         price: Number(mockPrice.toFixed(2)),
-        verified: upc === productInfo?.expectedUPC
+        verified: upc === productInfo?.expectedUPC,
       })
     }
   }
 
-  const savePriceToDatabase = async (upc: string, price: number, scanned: boolean) => {
+  const savePriceToDatabase = async (
+    upc: string,
+    price: number,
+    scanned: boolean
+  ) => {
     try {
       // Get user location for store context
-      navigator.geolocation.getCurrentPosition(async (position) => {
+      navigator.geolocation.getCurrentPosition(async position => {
         const { latitude, longitude } = position.coords
-        
+
         await fetch('/api/scanned-products', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             upc,
@@ -160,8 +166,8 @@ export function BarcodeScanner({
             latitude,
             longitude,
             scanned,
-            timestamp: new Date().toISOString()
-          })
+            timestamp: new Date().toISOString(),
+          }),
         })
       })
     } catch (error) {
@@ -184,14 +190,16 @@ export function BarcodeScanner({
               <X className="h-4 w-4" />
             </Button>
           </div>
-          
+
           {productInfo && (
             <div className="space-y-2">
               <p className="text-sm font-medium">{productInfo.title}</p>
               <div className="flex items-center space-x-2">
                 <Badge variant="outline">SKU: {productInfo.sku}</Badge>
                 {productInfo.expectedUPC && (
-                  <Badge variant="outline">UPC: {productInfo.expectedUPC}</Badge>
+                  <Badge variant="outline">
+                    UPC: {productInfo.expectedUPC}
+                  </Badge>
                 )}
               </div>
             </div>
@@ -205,9 +213,10 @@ export function BarcodeScanner({
               onClick={() => setScanMode('camera')}
               className={`
                 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center space-x-2
-                ${scanMode === 'camera' 
-                  ? 'bg-background text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
+                ${
+                  scanMode === 'camera'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }
               `}
             >
@@ -218,9 +227,10 @@ export function BarcodeScanner({
               onClick={() => setScanMode('upload')}
               className={`
                 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center space-x-2
-                ${scanMode === 'upload' 
-                  ? 'bg-background text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
+                ${
+                  scanMode === 'upload'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }
               `}
             >
@@ -231,9 +241,10 @@ export function BarcodeScanner({
               onClick={() => setScanMode('manual')}
               className={`
                 flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center space-x-2
-                ${scanMode === 'manual' 
-                  ? 'bg-background text-foreground shadow-sm' 
-                  : 'text-muted-foreground hover:text-foreground'
+                ${
+                  scanMode === 'manual'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }
               `}
             >
@@ -259,7 +270,7 @@ export function BarcodeScanner({
                   playsInline
                   muted
                 />
-                
+
                 {isScanning && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="border-2 border-green-400 w-64 h-40 rounded-lg relative">
@@ -268,7 +279,7 @@ export function BarcodeScanner({
                     </div>
                   </div>
                 )}
-                
+
                 {!isScanning && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <CameraOff className="h-12 w-12 text-gray-400" />
@@ -285,11 +296,8 @@ export function BarcodeScanner({
                   <Camera className="mr-2 h-4 w-4" />
                   Scan Barcode
                 </Button>
-                
-                <Button
-                  variant="outline"
-                  onClick={() => setShowManualEntry(true)}
-                >
+
+                <Button variant="outline" onClick={() => setScanMode('manual')}>
                   <Keyboard className="mr-2 h-4 w-4" />
                   Manual Entry
                 </Button>
@@ -299,9 +307,7 @@ export function BarcodeScanner({
 
           {/* Upload View */}
           {scanMode === 'upload' && (
-            <BarcodeImageUpload 
-              onUPCDecoded={handleUPCDecoded}
-            />
+            <BarcodeImageUpload onUPCDecoded={handleUPCDecoded} />
           )}
 
           {/* Manual Price Entry */}
@@ -314,19 +320,21 @@ export function BarcodeScanner({
                   If you can't scan, enter the in-store price directly
                 </p>
               </div>
-              
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">In-store price ($)</label>
+                <label className="text-sm font-medium">
+                  In-store price ($)
+                </label>
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
                   placeholder="0.00"
                   value={manualPrice}
-                  onChange={(e) => setManualPrice(e.target.value)}
+                  onChange={e => setManualPrice(e.target.value)}
                 />
               </div>
-              
+
               <div className="flex space-x-2">
                 <Button
                   onClick={handleManualSubmit}
@@ -335,11 +343,8 @@ export function BarcodeScanner({
                 >
                   Save Price
                 </Button>
-                
-                <Button
-                  variant="outline"
-                  onClick={() => setScanMode('camera')}
-                >
+
+                <Button variant="outline" onClick={() => setScanMode('camera')}>
                   Back to Camera
                 </Button>
               </div>
@@ -352,7 +357,7 @@ export function BarcodeScanner({
               <div className="text-center p-4 bg-green-50 border border-green-200 rounded-lg">
                 <CheckCircle className="mx-auto h-8 w-8 text-green-600 mb-2" />
                 <h3 className="font-medium text-green-800">Barcode Scanned!</h3>
-                
+
                 <div className="space-y-2 mt-3">
                   <p className="text-sm text-green-700">
                     UPC: {scanResult.upc}
@@ -360,25 +365,26 @@ export function BarcodeScanner({
                   <p className="text-lg font-bold text-green-800">
                     Store Price: ${scanResult.price.toFixed(2)}
                   </p>
-                  
+
                   {scanResult.verified ? (
-                    <Badge className="bg-green-600">
-                      ✓ Product Verified
-                    </Badge>
+                    <Badge className="bg-green-600">✓ Product Verified</Badge>
                   ) : (
-                    <Badge variant="outline" className="border-amber-400 text-amber-700">
+                    <Badge
+                      variant="outline"
+                      className="border-amber-400 text-amber-700"
+                    >
                       ⚠ Different product detected
                     </Badge>
                   )}
                 </div>
               </div>
-              
+
               <div className="flex space-x-2">
                 <Button onClick={handleScanComplete} className="flex-1">
                   Save This Price
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setScanResult(null)
                     setScannedCode('')
@@ -392,9 +398,15 @@ export function BarcodeScanner({
 
           {/* Instructions */}
           <div className="text-xs text-muted-foreground space-y-1 border-t pt-4">
-            <p><strong>Camera:</strong> Point at barcode and hold steady</p>
-            <p><strong>Upload:</strong> Select barcode image from your device</p>
-            <p><strong>Manual:</strong> Enter price if scanning fails</p>
+            <p>
+              <strong>Camera:</strong> Point at barcode and hold steady
+            </p>
+            <p>
+              <strong>Upload:</strong> Select barcode image from your device
+            </p>
+            <p>
+              <strong>Manual:</strong> Enter price if scanning fails
+            </p>
             <p>• Scanned prices are saved to help other users</p>
           </div>
         </CardContent>

@@ -193,7 +193,6 @@ export function ProductCard({ product, userLocation }: ProductCardProps) {
               variant="default"
               size="sm"
               className="flex-1 bg-orange-500 hover:bg-orange-600"
-              asChild
             >
               <a
                 href={`https://www.homedepot.com/p/${product.sku}`}

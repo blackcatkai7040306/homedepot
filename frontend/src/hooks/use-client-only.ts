@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 
 /**
  * Hook to prevent hydration mismatches by ensuring content only renders on client
@@ -33,5 +33,5 @@ export function ClientOnly({
     return fallback
   }
 
-  return <>{children}</>
+  return React.createElement(React.Fragment, null, children)
 }

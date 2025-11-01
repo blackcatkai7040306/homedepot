@@ -23,21 +23,21 @@ export function Header() {
 
           {/* Navigation */}
           <nav className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" asChild>
+            <Button variant="ghost" size="sm" >
               <Link href="/" className="flex items-center space-x-2">
                 <Home className="h-4 w-4" />
                 <span className="hidden sm:inline">Deals</span>
               </Link>
             </Button>
             
-            <Button variant="ghost" size="sm" asChild>
+            <Button variant="ghost" size="sm" >
               <Link href="/products" className="flex items-center space-x-2">
                 <Package className="h-4 w-4" />
                 <span className="hidden sm:inline">Products</span>
               </Link>
             </Button>
             
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="sm" >
               <Link href="/barcode-lookup" className="flex items-center space-x-2">
                 <Scan className="h-4 w-4" />
                 <span>Barcode Lookup</span>
