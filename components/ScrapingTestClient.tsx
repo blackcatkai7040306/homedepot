@@ -44,11 +44,6 @@ interface ScrapingResult {
 
 type FilterType = "all" | "in-stock" | "delivery"
 
-// Helper function to check if delivery exists (for 1-2 Day Delivery filter)
-function hasDelivery(delivery?: string): boolean {
-  return !!delivery && delivery.trim().length > 0
-}
-
 export function ScrapingTestClient() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ScrapingResult | null>(null)
@@ -65,9 +60,8 @@ export function ScrapingTestClient() {
 
     return result.data.products.filter((product) => {
       if (filter === "all") return true
-      if (filter === "in-stock")
-        return !!product.pickup && product.pickup.trim().length > 0
-      if (filter === "delivery") return hasDelivery(product.delivery)
+      if (filter === "in-stock") return !!product.pickup // Has pickup value
+      if (filter === "delivery") return !!product.delivery // Has delivery value
       return true
     })
   }
@@ -88,9 +82,8 @@ export function ScrapingTestClient() {
     // Apply filter to page products
     return currentPageData.products.filter((product) => {
       if (filter === "all") return true
-      if (filter === "in-stock")
-        return !!product.pickup && product.pickup.trim().length > 0
-      if (filter === "delivery") return hasDelivery(product.delivery)
+      if (filter === "in-stock") return !!product.pickup // Has pickup value
+      if (filter === "delivery") return !!product.delivery // Has delivery value
       return true
     })
   }
@@ -390,7 +383,7 @@ export function ScrapingTestClient() {
                       <span className="font-semibold text-gray-700">
                         {
                           result.data.products.filter((p) =>
-                            hasDelivery(p.delivery)
+                            p.delivery
                           ).length
                         }
                       </span>
@@ -464,9 +457,7 @@ export function ScrapingTestClient() {
                   >
                     1-2 Day Delivery (
                     {
-                      result.data.products.filter((p) =>
-                        hasDelivery(p.delivery)
-                      ).length
+                      result.data.products.filter((p) => p.delivery).length
                     }
                     )
                   </button>

@@ -1,6 +1,6 @@
-import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
-import { ContactForm } from '@/components/ContactForm'
+import Link from "next/link"
+import { Button } from "@/components/ui/Button"
+import { ContactForm } from "@/components/ContactForm"
 
 export default function Contact() {
   return (
@@ -11,7 +11,7 @@ export default function Contact() {
             Contact Us
           </h1>
           <p className="text-gray-600 mb-8 text-center">
-            Get in touch with us. We'd love to hear from you!
+            Get in touch with us. We would love to hear from you!
           </p>
           <ContactForm />
           <div className="mt-8 text-center">
@@ -24,4 +24,3 @@ export default function Contact() {
     </main>
   )
 }
-
