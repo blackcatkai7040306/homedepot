@@ -430,7 +430,7 @@ export async function scrapeHomeDepotRefrigeratorsPaginated(
       }
     }
 
-    // Step 3: Scrape ALL remaining pages with proper synchronization
+    // Step 3: Scrape ALL remaining pages
     for (let page = 2; page <= maxPageFromPagination; page++) {
       const offset = (page - 1) * productsPerPage
       const pageUrl = `${baseUrl}?Nao=${offset}`
@@ -438,12 +438,6 @@ export async function scrapeHomeDepotRefrigeratorsPaginated(
       console.log(`📄 Scraping page ${page}/${maxPageFromPagination}`)
       console.log(`   URL: ${pageUrl}`)
       console.log(`   Expected offset: ${offset}`)
-
-      // Critical: Wait between requests for proper synchronization
-      console.log(
-        `⏳ Waiting 3 seconds before scraping page ${page} for synchronization...`
-      )
-      await new Promise((resolve) => setTimeout(resolve, 3000))
 
       const pageResult = await scrapeUrlPaginated(pageUrl)
 

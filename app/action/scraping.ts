@@ -19,6 +19,24 @@ interface ProductData {
   delivery?: string
 }
 
+interface PageResult {
+  products: ProductData[]
+  pageNumber: number
+  productsCount: number
+  hasNextPage: boolean
+  nextPageUrl?: string
+}
+
+interface PaginatedScrapingResult {
+  success: boolean
+  baseUrl: string
+  totalPages: number
+  totalProducts: number
+  pages: PageResult[]
+  allProducts: ProductData[]
+  error?: string
+}
+
 interface ScrapingResult {
   success: boolean
   url: string
@@ -43,189 +61,470 @@ interface ScrapingResult {
 }
 
 /**
- * Ultra-reliable scraping with multiple content loading strategies
+ * MAIN ENTRY POINT: Enhanced pagination scraping with reliable product loading
  */
-export async function scrapeUrl(
+export async function scrapeHomeDepotPage(
   url: string,
-  parseProducts: boolean = true,
-  saveHtml: boolean = true,
-  retryCount: number = 0
+  maxPages: number = 2
 ): Promise<ScrapingResult> {
-  const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY
+  console.log(`🔄 STARTING PAGINATION SCRAPER (max ${maxPages} pages)...`)
+  console.log(`🔗 Target URL: ${url}`)
 
-  if (!SCRAPINGBEE_API_KEY) {
+  // Scrape first page with comprehensive strategy
+  console.log("\n📄 STEP 1: Scraping FIRST page...")
+  const firstPageResult = await scrapeWithPaginationStrategy(url, 1)
+
+  if (!firstPageResult.success || !firstPageResult.data) {
+    console.error("❌ FIRST PAGE FAILED - Aborting pagination")
+    return firstPageResult
+  }
+
+  const firstPageProducts = firstPageResult.data.products || []
+  const allProducts: ProductData[] = [...firstPageProducts]
+  const pages: {
+    pageNumber: number
+    url: string
+    products: ProductData[]
+    productCount: number
+  }[] = [
+    {
+      pageNumber: 1,
+      url: url,
+      products: firstPageProducts,
+      productCount: firstPageProducts.length,
+    },
+  ]
+
+  console.log(`✅ FIRST PAGE SUCCESS: ${firstPageProducts.length} products`)
+
+  // If only scraping first page, return early
+  if (maxPages === 1) {
+    console.log(
+      `🏁 TEST MODE: Returning ${firstPageProducts.length} products from first page only`
+    )
     return {
-      success: false,
-      url,
-      error: "ScrapingBee API key not found",
+      success: true,
+      url: url,
+      statusCode: firstPageResult.statusCode,
+      data: {
+        products: allProducts,
+        totalCount: allProducts.length,
+        pagination: {
+          currentPage: 1,
+          totalPages: 1,
+          productsPerPage: firstPageProducts.length,
+        },
+        pages: pages,
+      },
     }
   }
 
-  const maxRetries = 3
-  const currentRetry = retryCount
+  // Detect total pages from first page
+  console.log("\n📊 STEP 2: Detecting pagination...")
+  const totalPages = detectTotalPages(
+    firstPageResult.data.rawHtml || "",
+    firstPageProducts.length
+  )
+  const pagesToScrape = Math.min(maxPages, totalPages)
+
+  console.log(
+    `📊 Pagination detected: ${totalPages} total pages, scraping ${pagesToScrape} pages`
+  )
+
+  // Scrape subsequent pages with PAGINATION-OPTIMIZED strategy
+  console.log("\n📄 STEP 3: Scraping subsequent pages...")
+  for (let page = 2; page <= pagesToScrape; page++) {
+    console.log(`\n${"=".repeat(60)}`)
+    console.log(`📄 SCRAPING PAGE ${page}/${pagesToScrape}...`)
+    console.log(`${"=".repeat(60)}`)
+
+    const naoValue = (page - 1) * firstPageProducts.length
+    const pageUrl = updateUrlParameter(url, "Nao", naoValue.toString())
+
+    console.log(`🔗 Page ${page} URL: ${pageUrl}`)
+    console.log(
+      `🔗 Nao parameter: ${naoValue} (${firstPageProducts.length} products per page)`
+    )
+
+    // Use PAGINATION-OPTIMIZED scraping with extended waiting
+    const pageResult = await scrapeWithPaginationStrategy(pageUrl, page)
+
+    if (pageResult.success && pageResult.data) {
+      const pageProducts = pageResult.data.products
+
+      if (pageProducts.length === 0) {
+        console.warn(
+          `🚨 PAGE ${page} RETURNED 0 PRODUCTS! Attempting recovery...`
+        )
+
+        // Recovery Strategy 1: Retry with extended wait
+        console.log(`🔄 RECOVERY: Retrying page ${page} with extended wait...`)
+        await new Promise((resolve) => setTimeout(resolve, 10000))
+        const retryResult = await scrapeWithExtendedPaginationWait(
+          pageUrl,
+          page
+        )
+
+        if (
+          retryResult.success &&
+          retryResult.data &&
+          retryResult.data.products.length > 0
+        ) {
+          console.log(
+            `✅ RECOVERY SUCCESS: Page ${page} retry got ${retryResult.data.products.length} products`
+          )
+          allProducts.push(...retryResult.data.products)
+          pages.push({
+            pageNumber: page,
+            url: pageUrl,
+            products: retryResult.data.products,
+            productCount: retryResult.data.products.length,
+          })
+        } else {
+          // Recovery Strategy 2: Ultra-extended wait as last resort
+          console.log(
+            `🐌 FINAL ATTEMPT: Ultra-extended wait for page ${page}...`
+          )
+          await new Promise((resolve) => setTimeout(resolve, 15000))
+          const finalResult = await scrapeWithUltraExtendedWait(pageUrl, page)
+
+          if (
+            finalResult.success &&
+            finalResult.data &&
+            finalResult.data.products.length > 0
+          ) {
+            console.log(
+              `🎉 ULTRA RECOVERY: Page ${page} final attempt got ${finalResult.data.products.length} products`
+            )
+            allProducts.push(...finalResult.data.products)
+            pages.push({
+              pageNumber: page,
+              url: pageUrl,
+              products: finalResult.data.products,
+              productCount: finalResult.data.products.length,
+            })
+          } else {
+            console.warn(`💀 PAGE ${page} FAILED: All recovery attempts failed`)
+            pages.push({
+              pageNumber: page,
+              url: pageUrl,
+              products: [],
+              productCount: 0,
+            })
+          }
+        }
+      } else {
+        // Normal success case
+        allProducts.push(...pageProducts)
+        pages.push({
+          pageNumber: page,
+          url: pageUrl,
+          products: pageProducts,
+          productCount: pageProducts.length,
+        })
+        console.log(`✅ PAGE ${page} SUCCESS: ${pageProducts.length} products`)
+      }
+    } else {
+      console.warn(`❌ PAGE ${page} FAILED: ${pageResult.error}`)
+      pages.push({
+        pageNumber: page,
+        url: pageUrl,
+        products: [],
+        productCount: 0,
+      })
+    }
+
+    // Strategic delay between pagination requests
+    const delay = calculatePageDelay(page)
+    console.log(
+      `⏳ Strategic delay: ${delay / 1000}s before page ${page + 1}...`
+    )
+    await new Promise((resolve) => setTimeout(resolve, delay))
+
+    console.log(
+      `📊 Running total: ${allProducts.length} products from ${pages.length} pages`
+    )
+  }
+
+  // Final processing and validation
+  console.log("\n🏁 STEP 4: Final processing...")
+  const uniqueProducts = removeDuplicates(allProducts)
+  const validProducts = validateProducts(uniqueProducts)
+
+  console.log(`\n${"🎉".repeat(20)}`)
+  console.log(`🎯 SCRAPING COMPLETE!`)
+  console.log(
+    `📊 Final Results: ${validProducts.length} valid products from ${pages.length} pages`
+  )
+  console.log(
+    `📊 Successful pages: ${pages.filter((p) => p.products.length > 0).length}`
+  )
+  console.log(
+    `📊 Failed pages: ${pages.filter((p) => p.products.length === 0).length}`
+  )
+  console.log(`${"🎉".repeat(20)}`)
+
+  return {
+    success: true,
+    url,
+    statusCode: firstPageResult.statusCode,
+    data: {
+      products: validProducts,
+      totalCount: validProducts.length,
+      pagination: {
+        currentPage: 1,
+        totalPages: totalPages,
+        productsPerPage: firstPageProducts.length,
+      },
+      pages: pages,
+    },
+  }
+}
+
+/**
+ * PAGINATION-OPTIMIZED scraping strategy
+ */
+async function scrapeWithPaginationStrategy(
+  url: string,
+  pageNumber: number,
+  retryCount: number = 0
+): Promise<ScrapingResult> {
+  const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || ""
+
+  const maxRetries = 2
+  const isPaginationPage = pageNumber > 1
 
   try {
-    console.log("=".repeat(80))
     console.log(
-      `🔄 Scraping URL (attempt ${currentRetry + 1}/${maxRetries + 1}):`,
-      url
+      `🎯 ${
+        isPaginationPage ? "PAGINATION-OPTIMIZED " : ""
+      }Scraping page ${pageNumber} (attempt ${retryCount + 1})...`
     )
-    console.log("=".repeat(80))
 
-    // Try multiple scraping strategies
-    const strategies = [
-      await tryScrapingStrategy(url, "comprehensive", SCRAPINGBEE_API_KEY),
-      await tryScrapingStrategy(url, "aggressive", SCRAPINGBEE_API_KEY),
-      await tryScrapingStrategy(url, "minimal", SCRAPINGBEE_API_KEY),
-    ]
+    const apiUrl = new URL("https://app.scrapingbee.com/api/v1/")
+    apiUrl.searchParams.append("api_key", SCRAPINGBEE_API_KEY)
+    apiUrl.searchParams.append("url", url)
+    apiUrl.searchParams.append("render_js", "true")
+    apiUrl.searchParams.append("stealth_proxy", "true")
+    apiUrl.searchParams.append("premium_proxy", "true")
+    apiUrl.searchParams.append("country_code", "us")
+    apiUrl.searchParams.append("block_resources", "false")
+    apiUrl.searchParams.append("timeout", "120000")
 
-    // Find the best result
-    let bestResult = strategies[0]
-    for (const result of strategies) {
-      if (
-        result.success &&
-        result.data &&
-        result.data.products.length > bestResult.data!.products.length
-      ) {
-        bestResult = result
+    // PAGINATION-OPTIMIZED waiting times
+    if (isPaginationPage) {
+      // Extended settings for pagination pages
+      apiUrl.searchParams.append("wait", "12000") // 12 seconds initial wait
+      apiUrl.searchParams.append("wait_browser", "networkidle")
+      apiUrl.searchParams.append(
+        "wait_for",
+        ".sui-grid, [data-product-id], .product-pod, .search-results"
+      )
+
+      // Comprehensive JavaScript scenario for pagination
+      const paginationScenario = {
+        instructions: [
+          { wait: 7000 }, // Extended initial wait for pagination
+          {
+            evaluate:
+              "console.log('Pagination loading: Initial wait complete')",
+          },
+          // Progressive scrolling to trigger all lazy loading
+          { scroll_y: 800 },
+          { wait: 2000 },
+          { scroll_y: 1600 },
+          { wait: 2000 },
+          { scroll_y: 2400 },
+          { wait: 2000 },
+          { scroll_y: 3200 },
+          { wait: 2000 },
+          { scroll_y: 4000 },
+          { wait: 2000 },
+          // Wait for any dynamic content
+          { wait: 4000 },
+          // Additional scroll to ensure all content loaded
+          { scroll_y: 2000 },
+          { wait: 2000 },
+          { scroll_y: 0 },
+          { wait: 1500 },
+          // Final wait for any pending product loads
+          { wait: 3000 },
+          { evaluate: "console.log('Pagination loading complete')" },
+        ],
       }
+      apiUrl.searchParams.append(
+        "js_scenario",
+        JSON.stringify(paginationScenario)
+      )
+    } else {
+      // First page - standard optimized settings
+      apiUrl.searchParams.append("wait", "8000")
+      apiUrl.searchParams.append("wait_for", ".sui-grid")
+
+      const firstPageScenario = {
+        instructions: [
+          { wait: 4000 },
+          { scroll_y: 1200 },
+          { wait: 1500 },
+          { scroll_y: 2400 },
+          { wait: 1500 },
+          { scroll_y: 0 },
+          { wait: 1000 },
+        ],
+      }
+      apiUrl.searchParams.append(
+        "js_scenario",
+        JSON.stringify(firstPageScenario)
+      )
     }
 
-    console.log(
-      `🏆 Best strategy found: ${bestResult.data?.products.length} products`
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120000)
+
+    const response = await fetch(apiUrl.toString(), {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": getRandomUserAgent(),
+      },
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(
+        `ScrapingBee API error: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const htmlContent = await response.text()
+    const statusCode = response.status
+
+    // CRITICAL: Validate that page actually contains products
+    const hasProductIndicators = validateProductPresence(htmlContent)
+
+    if (!hasProductIndicators && isPaginationPage && retryCount < maxRetries) {
+      console.warn(
+        `⚠️ Page ${pageNumber} missing product indicators, retrying...`
+      )
+      await new Promise((resolve) =>
+        setTimeout(resolve, 8000 * (retryCount + 1))
+      )
+      return scrapeWithPaginationStrategy(url, pageNumber, retryCount + 1)
+    }
+
+    // Parse products with enhanced parser
+    const products = parseHomeDepotProductsEnhanced(
+      htmlContent,
+      url,
+      pageNumber
     )
 
-    // If still no products, retry
-    if (bestResult.data?.products.length === 0 && currentRetry < maxRetries) {
-      console.log(`🔄 No products found, retrying with different approach...`)
+    // CRITICAL: If no products found on pagination page, retry
+    if (products.length === 0 && isPaginationPage && retryCount < maxRetries) {
+      console.warn(`⚠️ Page ${pageNumber} returned 0 products, retrying...`)
       await new Promise((resolve) =>
-        setTimeout(resolve, 8000 * (currentRetry + 1))
+        setTimeout(resolve, 10000 * (retryCount + 1))
       )
-      return scrapeUrl(url, parseProducts, saveHtml, currentRetry + 1)
+      return scrapeWithPaginationStrategy(url, pageNumber, retryCount + 1)
     }
 
-    return bestResult
-  } catch (error) {
-    console.error("❌ All scraping strategies failed:", error)
+    console.log(`✅ Page ${pageNumber} parsing: ${products.length} products`)
 
-    if (currentRetry < maxRetries) {
-      console.log(
-        `🔄 Retrying after error (${currentRetry + 1}/${maxRetries})...`
-      )
+    return {
+      success: true,
+      url,
+      statusCode,
+      data: {
+        products,
+        totalCount: products.length,
+        rawHtml: htmlContent,
+      },
+    }
+  } catch (error) {
+    console.error(`❌ Page ${pageNumber} scraping failed:`, error)
+
+    if (retryCount < maxRetries) {
+      console.log(`🔄 Retrying page ${pageNumber}...`)
       await new Promise((resolve) =>
-        setTimeout(resolve, 10000 * (currentRetry + 1))
+        setTimeout(resolve, 10000 * (retryCount + 1))
       )
-      return scrapeUrl(url, parseProducts, saveHtml, currentRetry + 1)
+      return scrapeWithPaginationStrategy(url, pageNumber, retryCount + 1)
     }
 
     return {
       success: false,
       url,
-      error:
-        error instanceof Error
-          ? error.message
-          : "All scraping strategies failed",
+      error: `Page ${pageNumber} failed after ${
+        maxRetries + 1
+      } attempts: ${error}`,
     }
   }
 }
 
 /**
- * Different scraping strategies for different scenarios
+ * EXTENDED waiting for problematic pagination pages
  */
-async function tryScrapingStrategy(
+async function scrapeWithExtendedPaginationWait(
   url: string,
-  strategy: "comprehensive" | "aggressive" | "minimal",
-  apiKey: string
+  pageNumber: number
 ): Promise<ScrapingResult> {
-  console.log(`🎯 Trying ${strategy} scraping strategy...`)
+  console.log(`🐌 EXTENDED scraping for problematic page ${pageNumber}...`)
 
-  const apiUrl = new URL("https://app.scrapingbee.com/api/v1/")
-  apiUrl.searchParams.append("api_key", apiKey)
-  apiUrl.searchParams.append("url", url)
-  apiUrl.searchParams.append("render_js", "true")
-  apiUrl.searchParams.append("stealth_proxy", "true")
-  apiUrl.searchParams.append("premium_proxy", "true")
-  apiUrl.searchParams.append("country_code", "us")
-  apiUrl.searchParams.append("block_resources", "false")
-  apiUrl.searchParams.append("timeout", "120000")
-
-  switch (strategy) {
-    case "comprehensive":
-      // Maximum waiting and interaction
-      apiUrl.searchParams.append("wait", "15000")
-      apiUrl.searchParams.append("wait_browser", "networkidle")
-      apiUrl.searchParams.append(
-        "wait_for",
-        ".sui-grid, [data-product-id], .product-pod"
-      )
-
-      const comprehensiveScenario = {
-        instructions: [
-          { wait: 5000 },
-          { scroll_y: 1000 },
-          { wait: 2000 },
-          { scroll_y: 2000 },
-          { wait: 2000 },
-          { scroll_y: 3000 },
-          { wait: 2000 },
-          { scroll_y: 4000 },
-          { wait: 2000 },
-          { scroll_y: 5000 },
-          { wait: 2000 },
-          { scroll_y: 0 },
-          { wait: 2000 },
-          { evaluate: "window.scrollTo(0, document.body.scrollHeight / 4);" },
-          { wait: 1500 },
-          { evaluate: "window.scrollTo(0, document.body.scrollHeight / 2);" },
-          { wait: 1500 },
-          {
-            evaluate: "window.scrollTo(0, document.body.scrollHeight * 0.75);",
-          },
-          { wait: 1500 },
-          { evaluate: "window.scrollTo(0, document.body.scrollHeight);" },
-          { wait: 2000 },
-          { evaluate: "window.dispatchEvent(new Event('resize'));" },
-          { wait: 1000 },
-        ],
-      }
-      apiUrl.searchParams.append(
-        "js_scenario",
-        JSON.stringify(comprehensiveScenario)
-      )
-      break
-
-    case "aggressive":
-      // Quick but thorough
-      apiUrl.searchParams.append("wait", "8000")
-      apiUrl.searchParams.append("wait_for", ".sui-grid")
-
-      const aggressiveScenario = {
-        instructions: [
-          { wait: 3000 },
-          { scroll_y: 2000 },
-          { wait: 1500 },
-          { scroll_y: 4000 },
-          { wait: 1500 },
-          { scroll_y: 0 },
-          { wait: 1000 },
-          { scroll_y: 3000 },
-          { wait: 1500 },
-        ],
-      }
-      apiUrl.searchParams.append(
-        "js_scenario",
-        JSON.stringify(aggressiveScenario)
-      )
-      break
-
-    case "minimal":
-      // Fastest, minimal interaction
-      apiUrl.searchParams.append("wait", "5000")
-      apiUrl.searchParams.append("wait_for", "body")
-      break
-  }
+  const SCRAPINGBEE_API_KEY =
+    "GE686H463Y0EVSGKQII5V0FJ2XNEDJDAXFH9LW6S3V1A1J4RKTT5KAZ0664A9YO5RJUZHDLNDIH0JHQA"
 
   try {
+    const apiUrl = new URL("https://app.scrapingbee.com/api/v1/")
+    apiUrl.searchParams.append("api_key", SCRAPINGBEE_API_KEY)
+    apiUrl.searchParams.append("url", url)
+    apiUrl.searchParams.append("render_js", "true")
+    apiUrl.searchParams.append("stealth_proxy", "true")
+    apiUrl.searchParams.append("premium_proxy", "true")
+    apiUrl.searchParams.append("country_code", "us")
+    apiUrl.searchParams.append("block_resources", "false")
+    apiUrl.searchParams.append("timeout", "150000")
+
+    // Extended waiting settings
+    apiUrl.searchParams.append("wait", "15000") // 15 seconds initial wait
+    apiUrl.searchParams.append("wait_browser", "networkidle")
+    apiUrl.searchParams.append("wait_for", "body")
+
+    const extendedScenario = {
+      instructions: [
+        { wait: 8000 }, // Extended initial wait
+        {
+          evaluate:
+            "console.log('Extended loading: Starting comprehensive scroll...')",
+        },
+        // Comprehensive scrolling
+        { scroll_y: 1000 },
+        { wait: 2500 },
+        { scroll_y: 2000 },
+        { wait: 2500 },
+        { scroll_y: 3000 },
+        { wait: 2500 },
+        { scroll_y: 4000 },
+        { wait: 2500 },
+        { scroll_y: 5000 },
+        { wait: 2500 },
+        // Wait for dynamic content
+        { wait: 6000 },
+        // Additional scroll patterns
+        { scroll_y: 2500 },
+        { wait: 2500 },
+        { scroll_y: 1500 },
+        { wait: 2500 },
+        { scroll_y: 500 },
+        { wait: 2500 },
+        // Final extended wait
+        { wait: 5000 },
+        { evaluate: "console.log('Extended loading complete')" },
+      ],
+    }
+    apiUrl.searchParams.append("js_scenario", JSON.stringify(extendedScenario))
+
     const response = await fetch(apiUrl.toString(), {
       method: "GET",
       headers: {
@@ -239,19 +538,13 @@ async function tryScrapingStrategy(
     }
 
     const htmlContent = await response.text()
+    const products = parseHomeDepotProductsEnhanced(
+      htmlContent,
+      url,
+      pageNumber
+    )
 
-    // Validate content
-    if (htmlContent.length < 1000) {
-      throw new Error("HTML content too short")
-    }
-
-    // Check for blocking
-    if (isBlocked(htmlContent)) {
-      throw new Error("Page blocked by anti-bot")
-    }
-
-    const products = parseHomeDepotProductsEnhanced(htmlContent, url)
-    console.log(`✅ ${strategy} strategy: ${products.length} products`)
+    console.log(`✅ Extended page ${pageNumber}: ${products.length} products`)
 
     return {
       success: true,
@@ -264,261 +557,275 @@ async function tryScrapingStrategy(
       },
     }
   } catch (error) {
-    console.log(`❌ ${strategy} strategy failed:`, error)
+    console.error(`❌ Extended page ${pageNumber} failed:`, error)
     return {
       success: false,
       url,
-      error: `Strategy ${strategy} failed`,
+      error: `Extended scraping failed: ${error}`,
     }
   }
 }
 
 /**
- * Enhanced product parsing with multiple detection methods
+ * ULTRA-EXTENDED waiting as last resort
+ */
+async function scrapeWithUltraExtendedWait(
+  url: string,
+  pageNumber: number
+): Promise<ScrapingResult> {
+  console.log(
+    `🚀 ULTRA-EXTENDED scraping for page ${pageNumber} (LAST RESORT)...`
+  )
+
+  const SCRAPINGBEE_API_KEY =
+    "GE686H463Y0EVSGKQII5V0FJ2XNEDJDAXFH9LW6S3V1A1J4RKTT5KAZ0664A9YO5RJUZHDLNDIH0JHQA"
+
+  try {
+    const apiUrl = new URL("https://app.scrapingbee.com/api/v1/")
+    apiUrl.searchParams.append("api_key", SCRAPINGBEE_API_KEY)
+    apiUrl.searchParams.append("url", url)
+    apiUrl.searchParams.append("render_js", "true")
+    apiUrl.searchParams.append("stealth_proxy", "true")
+    apiUrl.searchParams.append("premium_proxy", "true")
+    apiUrl.searchParams.append("country_code", "us")
+    apiUrl.searchParams.append("block_resources", "false")
+    apiUrl.searchParams.append("timeout", "180000") // 3 minute timeout
+
+    // Ultra-extended waiting
+    apiUrl.searchParams.append("wait", "20000") // 20 seconds initial wait
+    apiUrl.searchParams.append("wait_browser", "networkidle")
+    apiUrl.searchParams.append("wait_for", "body")
+
+    const ultraScenario = {
+      instructions: [
+        { wait: 10000 }, // 10 second initial wait
+        { evaluate: "console.log('ULTRA loading: Maximum wait engaged...')" },
+        // Maximum comprehensive scroll
+        { scroll_y: 1000 },
+        { wait: 3000 },
+        { scroll_y: 2000 },
+        { wait: 3000 },
+        { scroll_y: 3000 },
+        { wait: 3000 },
+        { scroll_y: 4000 },
+        { wait: 3000 },
+        { scroll_y: 5000 },
+        { wait: 3000 },
+        { scroll_y: 6000 },
+        { wait: 3000 },
+        // Extended wait for dynamic content
+        { wait: 8000 },
+        // Additional comprehensive scroll
+        { scroll_y: 3000 },
+        { wait: 3000 },
+        { scroll_y: 1500 },
+        { wait: 3000 },
+        { scroll_y: 500 },
+        { wait: 3000 },
+        { scroll_y: 0 },
+        { wait: 3000 },
+        // Final ultra wait
+        { wait: 10000 },
+        { evaluate: "console.log('ULTRA loading complete')" },
+      ],
+    }
+    apiUrl.searchParams.append("js_scenario", JSON.stringify(ultraScenario))
+
+    const response = await fetch(apiUrl.toString(), {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": getRandomUserAgent(),
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`)
+    }
+
+    const htmlContent = await response.text()
+    const products = parseHomeDepotProductsEnhanced(
+      htmlContent,
+      url,
+      pageNumber
+    )
+
+    console.log(
+      `✅ Ultra-extended page ${pageNumber}: ${products.length} products`
+    )
+
+    return {
+      success: true,
+      url,
+      statusCode: response.status,
+      data: {
+        products,
+        totalCount: products.length,
+        rawHtml: htmlContent,
+      },
+    }
+  } catch (error) {
+    console.error(`❌ Ultra-extended page ${pageNumber} failed:`, error)
+    return {
+      success: false,
+      url,
+      error: `Ultra-extended scraping failed: ${error}`,
+    }
+  }
+}
+
+/**
+ * ENHANCED product parsing with comprehensive strategies
  */
 function parseHomeDepotProductsEnhanced(
   html: string,
-  url: string
+  url: string,
+  pageNumber: number
 ): ProductData[] {
   const products: ProductData[] = []
   const $ = cheerio.load(html)
 
-  console.log("🔍 Starting enhanced multi-strategy product parsing...")
+  console.log(`🔍 Page ${pageNumber}: Starting multi-strategy parsing...`)
 
-  // Strategy 1: Direct data-product-id elements
-  const strategy1Products = parseWithDataProductId($)
-  console.log(
-    `📊 Strategy 1 (data-product-id): ${strategy1Products.length} products`
+  // Validate this is actually a product page
+  if (!validateProductPresence(html)) {
+    console.warn(`⚠️ Page ${pageNumber}: No product indicators found in HTML`)
+    return products
+  }
+
+  // Strategy 1: Direct data-product-id elements (MOST RELIABLE)
+  let productCards = $(
+    "div[data-product-id], article[data-product-id], li[data-product-id]"
   )
-  products.push(...strategy1Products)
-
-  // Strategy 2: Structured data (JSON-LD)
-  const strategy2Products = parseStructuredData($)
   console.log(
-    `📊 Strategy 2 (structured data): ${strategy2Products.length} products`
-  )
-  products.push(...strategy2Products)
-
-  // Strategy 3: Grid-based detection
-  const strategy3Products = parseGridProducts($)
-  console.log(
-    `📊 Strategy 3 (grid detection): ${strategy3Products.length} products`
-  )
-  products.push(...strategy3Products)
-
-  // Strategy 4: Pattern-based detection
-  const strategy4Products = parsePatternBased($, html)
-  console.log(
-    `📊 Strategy 4 (pattern-based): ${strategy4Products.length} products`
-  )
-  products.push(...strategy4Products)
-
-  // Remove duplicates and validate
-  const uniqueProducts = removeDuplicates(products)
-  const validProducts = validateProducts(uniqueProducts)
-
-  console.log(
-    `✅ Final: ${validProducts.length} valid products from ${products.length} raw finds`
+    `📊 Page ${pageNumber}: Direct data-product-id elements: ${productCards.length}`
   )
 
-  return validProducts
-}
+  // Strategy 2: Grid-based detection
+  if (productCards.length === 0) {
+    console.log(`🔄 Page ${pageNumber}: Trying grid-based detection...`)
+    const gridSelectors = [
+      ".sui-grid",
+      "[data-testid='product-grid']",
+      ".search-results",
+      ".browse-search__pod-container",
+      ".plp-grid",
+    ]
 
-/**
- * Strategy 1: Parse elements with data-product-id
- */
-function parseWithDataProductId($: cheerio.CheerioAPI): ProductData[] {
-  const products: ProductData[] = []
+    gridSelectors.forEach((selector) => {
+      $(selector).each((_, container) => {
+        const $container = $(container)
+        const gridProducts = $container.find(
+          "> div, > article, > li, > section"
+        )
 
-  const selectors = [
-    "div[data-product-id]",
-    "article[data-product-id]",
-    "li[data-product-id]",
-    "section[data-product-id]",
-    "[data-product-id]",
-  ]
-
-  selectors.forEach((selector) => {
-    $(selector).each((index, el) => {
-      try {
-        const $el = $(el)
-        const product = extractProductData($el, $)
-        if (product && product.title && product.sku) {
-          products.push(product)
-        }
-      } catch (error) {
-        // Skip invalid elements
-      }
-    })
-  })
-
-  return products
-}
-
-/**
- * Strategy 2: Parse structured data (JSON-LD)
- */
-function parseStructuredData($: cheerio.CheerioAPI): ProductData[] {
-  const products: ProductData[] = []
-
-  $('script[type="application/ld+json"]').each((index, el) => {
-    try {
-      const jsonText = $(el).html()
-      if (!jsonText) return
-
-      const data = JSON.parse(jsonText)
-
-      if (data["@type"] === "Product" || data["@type"] === "ListItem") {
-        const product: ProductData = {
-          title: data.name || data.headline,
-          brand: data.brand?.name,
-          price: data.offers?.price ? `$${data.offers.price}` : undefined,
-          image: data.image,
-          url: data.url || data.offers?.url,
-          sku: data.sku || data.productID,
-          rating: data.aggregateRating?.ratingValue?.toString(),
-          reviewCount: data.aggregateRating?.reviewCount?.toString(),
-        }
-
-        if (product.title && product.sku) {
-          products.push(product)
-        }
-      }
-
-      // Handle ItemList
-      if (data["@type"] === "ItemList" && Array.isArray(data.itemListElement)) {
-        data.itemListElement.forEach((item: any) => {
-          if (item.item) {
-            const product: ProductData = {
-              title: item.item.name,
-              brand: item.item.brand?.name,
-              price: item.item.offers?.price
-                ? `$${item.item.offers.price}`
-                : undefined,
-              image: item.item.image,
-              url: item.item.url,
-              sku: item.item.sku,
-              rating: item.item.aggregateRating?.ratingValue?.toString(),
-            }
-
-            if (product.title && product.sku) {
-              products.push(product)
-            }
+        gridProducts.each((_, el) => {
+          const $el = $(el)
+          if (isLikelyProductCard($el, $)) {
+            productCards = productCards.add($el)
           }
         })
-      }
-    } catch (error) {
-      // Skip invalid JSON
-    }
-  })
-
-  return products
-}
-
-/**
- * Strategy 3: Grid-based product detection
- */
-function parseGridProducts($: cheerio.CheerioAPI): ProductData[] {
-  const products: ProductData[] = []
-
-  // Look for product grid containers
-  const gridSelectors = [
-    ".sui-grid",
-    "[data-testid='product-grid']",
-    ".browse-search__pod-container",
-    ".product-grid",
-    ".plp-grid",
-    ".search-results-container",
-  ]
-
-  gridSelectors.forEach((gridSelector) => {
-    $(gridSelector).each((gridIndex, gridEl) => {
-      const $grid = $(gridEl)
-
-      // Look for product-like elements within grid
-      $grid.find("div, article, li, section").each((index, el) => {
-        const $el = $(el)
-        const text = $el.text()
-
-        // Check if this looks like a product
-        if (isProductElement($el, $)) {
-          const product = extractProductData($el, $)
-          if (
-            product &&
-            product.title &&
-            !products.find((p) => p.sku === product.sku)
-          ) {
-            products.push(product)
-          }
-        }
       })
     })
-  })
+    console.log(
+      `📊 Page ${pageNumber}: Grid-based detection: ${productCards.length} potential products`
+    )
+  }
 
-  return products
-}
+  // Strategy 3: Comprehensive search as last resort
+  if (productCards.length === 0) {
+    console.log(`🔄 Page ${pageNumber}: Using comprehensive search...`)
+    const allPotentialProducts = $("div, article")
+      .filter((_, el) => {
+        const $el = $(el)
+        return isLikelyProductCard($el, $)
+      })
+      .slice(0, 200) // Limit to prevent performance issues
 
-/**
- * Strategy 4: Pattern-based detection for fallback
- */
-function parsePatternBased($: cheerio.CheerioAPI, html: string): ProductData[] {
-  const products: ProductData[] = []
+    productCards = allPotentialProducts
+    console.log(
+      `📊 Page ${pageNumber}: Comprehensive search: ${productCards.length} potential products`
+    )
+  }
 
-  // Look for product patterns in the HTML
-  const productPatterns = [
-    /data-product-id="([^"]+)"/g,
-    /data-sku="([^"]+)"/g,
-    /"productId":"([^"]+)"/g,
-    /"sku":"([^"]+)"/g,
-  ]
+  // Parse all found cards
+  let successCount = 0
+  productCards.each((index, el) => {
+    try {
+      const $card = $(el)
+      const product = extractProductData($card, $)
 
-  const foundSkus = new Set<string>()
-
-  productPatterns.forEach((pattern) => {
-    let match
-    while ((match = pattern.exec(html)) !== null) {
-      const sku = match[1]
-      if (sku && sku.length > 3 && !foundSkus.has(sku)) {
-        foundSkus.add(sku)
-
-        // Try to find the product container for this SKU
-        const productEl = $(
-          `[data-product-id="${sku}"], [data-sku="${sku}"]`
-        ).first()
-        if (productEl.length) {
-          const product = extractProductData(productEl, $)
-          if (product) {
-            products.push(product)
-          }
-        }
+      if (
+        product &&
+        product.title &&
+        product.title !== "Unknown Product" &&
+        (product.price || product.url)
+      ) {
+        products.push(product)
+        successCount++
       }
+    } catch (error) {
+      // Skip invalid cards silently
     }
   })
 
-  return products
+  console.log(
+    `✅ Page ${pageNumber}: Successfully parsed ${successCount}/${productCards.length} products`
+  )
+
+  return removeDuplicates(products)
 }
 
 /**
- * Check if element looks like a product
+ * Validate that HTML contains product indicators
  */
-function isProductElement(
+function validateProductPresence(html: string): boolean {
+  const productIndicators = [
+    "data-product-id",
+    "sui-grid",
+    "product-pod",
+    "search-results",
+    "browse-search",
+    "product-card",
+    "data-sku",
+  ]
+
+  return productIndicators.some((indicator) => html.includes(indicator))
+}
+
+/**
+ * Detect if element is likely a product card
+ */
+function isLikelyProductCard(
   $el: cheerio.Cheerio<any>,
   $: cheerio.CheerioAPI
 ): boolean {
   const text = $el.text()
+  const html = $.html($el)
+
+  // Must have price indicator
   const hasPrice = /\$[0-9,]+\.?[0-9]*/.test(text)
+  if (!hasPrice) return false
+
+  // Should have product identifiers
+  const hasProductId = html.includes("data-product-id")
   const hasImage = $el.find("img").length > 0
-  const hasLink = $el.find("a[href*='/p/']").length > 0
+  const hasProductLink = $el.find('a[href*="/p/"]').length > 0
   const hasProductText =
-    /product|item|sku|price|buy|add to cart|reviews?|rating/i.test(text)
+    /product|item|sku|buy|add to cart|reviews?|rating/i.test(text)
+
+  // Reasonable content length
+  const reasonableLength = text.length > 50 && text.length < 3000
 
   return (
-    hasPrice && (hasImage || hasLink) && hasProductText && text.length < 2000
+    (hasProductId || hasImage || hasProductLink) &&
+    hasProductText &&
+    reasonableLength
   )
 }
 
 /**
- * Extract product data from an element
+ * Extract product data from element
  */
 function extractProductData(
   $el: cheerio.Cheerio<any>,
@@ -527,7 +834,7 @@ function extractProductData(
   const sku =
     $el.attr("data-product-id") || $el.attr("data-sku") || generateTempId()
 
-  // Title extraction with multiple fallbacks
+  // Enhanced title extraction
   const title = extractTitle($el, $)
 
   // Price extraction
@@ -546,10 +853,15 @@ function extractProductData(
     .find('[data-testid="attribute-product-brand"]')
     .text()
     .trim()
+  const label = $el
+    .find('[data-testid="attribute-product-label"]')
+    .text()
+    .trim()
 
   return {
     title,
     brand,
+    label,
     price: priceData.price,
     oldPrice: priceData.oldPrice,
     saveAmount: priceData.saveAmount,
@@ -565,7 +877,7 @@ function extractProductData(
 }
 
 /**
- * Enhanced title extraction
+ * Enhanced title extraction with multiple fallbacks
  */
 function extractTitle(
   $el: cheerio.Cheerio<any>,
@@ -643,7 +955,6 @@ function extractPriceData(
       ".product-price",
       '[class*="price__current"]',
       ".text-price",
-      ".price-format__main-price",
     ]
 
     for (const selector of priceSelectors) {
@@ -742,15 +1053,81 @@ function extractFulfillment(
     }
   }
 
-  // Fallback: text pattern matching
-  const text = $el.text()
-  const patterns = {
-    pickup: /Pickup[^\\n]*/i,
-    delivery: /(?:Delivery|Shipping)[^\\n]*/i,
+  return ""
+}
+
+/**
+ * Detect total pages from HTML content
+ */
+function detectTotalPages(html: string, productsPerPage: number): number {
+  if (!html) return 1
+
+  const $ = cheerio.load(html)
+  let maxPage = 1
+
+  try {
+    // Look for pagination elements
+    const paginationText = $("*").text()
+
+    // Pattern: "Page X of Y"
+    const pageOfMatch = paginationText.match(/page\s+\d+\s+of\s+(\d+)/i)
+    if (pageOfMatch) {
+      maxPage = Math.max(maxPage, parseInt(pageOfMatch[1]))
+    }
+
+    // Look for page numbers in pagination
+    $(
+      '[data-component*="pagination"] a, .pagination a, [aria-label*="page"]'
+    ).each((_, el) => {
+      const text = $(el).text().trim()
+      const pageNum = parseInt(text)
+      if (!isNaN(pageNum) && pageNum > maxPage) {
+        maxPage = pageNum
+      }
+    })
+
+    // Estimate from product count (fallback)
+    const productCount = (html.match(/data-product-id/g) || []).length
+    if (productCount > 0) {
+      const estimatedPages = Math.ceil(productCount / productsPerPage)
+      maxPage = Math.max(maxPage, estimatedPages)
+    }
+  } catch (error) {
+    console.log("⚠️ Pagination detection failed, using default")
   }
 
-  const match = text.match(patterns[type])
-  return match ? match[0].trim() : ""
+  return Math.min(Math.max(maxPage, 1), 10) // Cap at 10 pages for safety
+}
+
+/**
+ * Calculate strategic delay between pages
+ */
+function calculatePageDelay(pageNumber: number): number {
+  // Increasing delays: 6s, 7s, 8s, 9s, 10s...
+  return 6000 + pageNumber * 1000
+}
+
+/**
+ * Update URL parameter helper
+ */
+function updateUrlParameter(url: string, key: string, value: string): string {
+  try {
+    const urlObj = new URL(url)
+    urlObj.searchParams.delete("Nao")
+    urlObj.searchParams.delete("nao")
+    urlObj.searchParams.set(key, value)
+    return urlObj.toString()
+  } catch {
+    // Manual fallback
+    const [base, query] = url.split("?")
+    if (!query) return `${base}?${key}=${value}`
+
+    const params = new URLSearchParams(query)
+    params.delete("Nao")
+    params.delete("nao")
+    params.set(key, value)
+    return `${base}?${params.toString()}`
+  }
 }
 
 /**
@@ -772,7 +1149,8 @@ function validateProducts(products: ProductData[]): ProductData[] {
       product.title &&
       product.title !== "Unknown Product" &&
       product.sku &&
-      !product.sku.startsWith("temp-")
+      !product.sku.startsWith("temp-") &&
+      (product.price || product.url) // Must have at least price or URL
   )
 }
 
@@ -784,32 +1162,60 @@ function getRandomUserAgent(): string {
   const userAgents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
   ]
   return userAgents[Math.floor(Math.random() * userAgents.length)]
 }
 
-function isBlocked(html: string): boolean {
-  const blockIndicators = [
-    "access denied",
-    "bot",
-    "captcha",
-    "cloudflare",
-    "security check",
-    "unusual traffic",
-    "please verify you are human",
-  ]
-  return blockIndicators.some((indicator) =>
-    html.toLowerCase().includes(indicator)
-  )
+/**
+ * Single page scraping function (backward compatibility)
+ */
+export async function scrapeUrl(
+  url: string,
+  parseProducts: boolean = true,
+  saveHtml: boolean = true
+): Promise<ScrapingResult> {
+  console.log("🔗 Single page scraping...")
+  const result = await scrapeWithPaginationStrategy(url, 1)
+
+  if (!saveHtml && result.data) {
+    result.data.rawHtml = undefined
+  }
+
+  return result
 }
 
-// Keep your existing scrapeHomeDepotPage function but use the new scrapeUrl
-export async function scrapeHomeDepotPage(
-  url: string,
+/**
+ * Discounted products specialization
+ */
+export async function scrapeDiscountedProducts(
+  baseUrl: string,
   maxPages: number = 2
 ): Promise<ScrapingResult> {
-  // Implementation remains the same as your previous version
-  // but it will now use the enhanced scrapeUrl function
-  return await scrapeUrl(url, true, true)
+  console.log("🎯 Scraping discounted products specifically...")
+
+  const result = await scrapeHomeDepotPage(baseUrl, maxPages)
+
+  if (result.success && result.data) {
+    // Filter for discounted products
+    const discountedProducts = result.data.products.filter(
+      (product) =>
+        product.saveAmount || product.savePercentage || product.oldPrice
+    )
+
+    console.log(
+      `🎯 Found ${discountedProducts.length} discounted products out of ${result.data.products.length} total`
+    )
+
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        products: discountedProducts,
+        totalCount: discountedProducts.length,
+      },
+    }
+  }
+
+  return result
 }
