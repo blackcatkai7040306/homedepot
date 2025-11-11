@@ -51,8 +51,7 @@ export async function scrapeUrl(
   saveHtml: boolean = true,
   retryCount: number = 0
 ): Promise<ScrapingResult> {
-  const SCRAPINGBEE_API_KEY =
-    "GE686H463Y0EVSGKQII5V0FJ2XNEDJDAXFH9LW6S3V1A1J4RKTT5KAZ0664A9YO5RJUZHDLNDIH0JHQA"
+  const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY
 
   if (!SCRAPINGBEE_API_KEY) {
     return {
